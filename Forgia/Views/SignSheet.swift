@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct SignSheet: View {
     let appID: UUID
@@ -8,6 +9,8 @@ struct SignSheet: View {
 
     @State private var selectedIdentityID: UUID?
     @State private var options = SigningOptions()
+    @State private var iconItem: PhotosPickerItem?
+    @State private var iconPreview: UIImage?
     @State private var stage: SigningStage?
     @State private var errorMessage: String?
     @State private var finished = false
@@ -84,10 +87,41 @@ struct SignSheet: View {
                     }
                 }
 
-                Section("Opzionali") {
-                    TextField("Nome visualizzato", text: $options.customDisplayName)
+                Section {
+                    TextField(app?.displayName ?? "Nome visualizzato", text: $options.customDisplayName)
+
+                    PhotosPicker(selection: $iconItem, matching: .images) {
+                        HStack {
+                            Label("Icona", systemImage: "photo")
+                            Spacer()
+                            if let iconPreview {
+                                Image(uiImage: iconPreview)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 36, height: 36)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            } else {
+                                Text("Scegli una foto")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    if options.customIconFile != nil {
+                        Button("Rimetti l'icona originale", role: .destructive) {
+                            options.customIconFile = nil
+                            iconPreview = nil
+                            iconItem = nil
+                        }
+                    }
+
                     TextField("Versione", text: $options.customVersion)
                         .keyboardType(.numbersAndPunctuation)
+                } header: {
+                    Text("Aspetto")
+                } footer: {
+                    Text("Il nome è quello sotto l'icona nella schermata Home. La foto viene ritagliata al centro in un quadrato e scritta nel bundle al posto dell'icona: su qualche app non attecchisce, perché l'icona sta in un catalogo compilato che non si può riscrivere.")
                 }
 
                 Section {
@@ -132,6 +166,9 @@ struct SignSheet: View {
             .onChange(of: selectedIdentityID) { _, _ in
                 suggestBundleIdentifier()
             }
+            .onChange(of: iconItem) { _, item in
+                Task { await loadIcon(item) }
+            }
         }
     }
 
@@ -147,7 +184,27 @@ struct SignSheet: View {
         options.customBundleIdentifier = identity.profile.bundleIDPattern
     }
 
-    private func run() {
+    /// Porta la foto scelta in un file, pronto per la firma.
+    @MainActor private func loadIcon(_ item: PhotosPickerItem?) async {
+        guard let item else { return }
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data)
+        else {
+            errorMessage = "Non riesco a leggere quella foto."
+            return
+        }
+
+        let destination = Paths.newWorkDir("icon").appendingPathComponent("icon.png")
+        guard let png = image.pngData(), (try? png.write(to: destination)) != nil else {
+            errorMessage = "Non riesco a preparare l'icona."
+            return
+        }
+
+        iconPreview = image
+        options.customIconFile = destination
+    }
+
+    @MainActor private func run() {
         guard let app, let identity else { return }
         stage = .preparing
         finished = false

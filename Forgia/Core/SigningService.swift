@@ -11,12 +11,15 @@ struct SigningOptions: Equatable {
     var adhoc: Bool = false
     /// Non scrivere `embedded.mobileprovision` nel bundle.
     var removeProvision: Bool = false
+    /// Immagine con cui sostituire l'icona dell'app.
+    var customIconFile: URL?
 }
 
 /// A che punto è la firma, per la barra di avanzamento.
 enum SigningStage: Equatable {
     case preparing
     case extracting
+    case customizing
     case signing
     case packaging
     case done
@@ -25,6 +28,7 @@ enum SigningStage: Equatable {
         switch self {
         case .preparing:  return "Preparazione"
         case .extracting: return "Estrazione dell'archivio"
+        case .customizing: return "Sostituzione dell'icona"
         case .signing:    return "Firma del bundle"
         case .packaging:  return "Ricostruzione dell'IPA"
         case .done:       return "Completato"
@@ -35,6 +39,7 @@ enum SigningStage: Equatable {
         switch self {
         case .preparing:  return 0.05
         case .extracting: return 0.25
+        case .customizing: return 0.35
         case .signing:    return 0.65
         case .packaging:  return 0.9
         case .done:       return 1.0
@@ -122,6 +127,11 @@ enum SigningService {
         let payload = try IPAArchive.extract(ipa: app.sourceIPA, into: work)
         let bundle = try IPAArchive.appBundle(inPayload: payload)
 
+        if let iconFile = options.customIconFile {
+            progress(.customizing)
+            try IconPatcher.apply(imageAt: iconFile, toAppBundle: bundle)
+        }
+
         progress(.signing)
         let ok = Zsign.sign(
             appPath: bundle.path,
@@ -133,7 +143,11 @@ enum SigningService {
             customName: options.customDisplayName,
             customVersion: options.customVersion,
             adhoc: options.adhoc,
-            removeProvision: options.removeProvision
+            removeProvision: options.removeProvision,
+            // Obbligatoria: zsign invoca questo blocco senza controllare se e'
+            // nil, quindi passarne nessuno fa crashare il processo appena la
+            // firma termina.
+            completion: { _ in }
         )
         guard ok else { throw SigningError.zsignFailed }
 
