@@ -55,10 +55,11 @@ enum TLSIdentityStore {
 
         guard let items = rawItems as? [[String: Any]],
               let first = items.first,
-              let identity = first[kSecImportItemIdentity as String] as? SecIdentity
+              let value = first[kSecImportItemIdentity as String],
+              CFGetTypeID(value as CFTypeRef) == SecIdentityGetTypeID()
         else { throw TLSError.noIdentity }
 
-        return identity
+        return value as! SecIdentity
     }
 
     // MARK: - Password nel Keychain

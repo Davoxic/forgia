@@ -120,7 +120,7 @@ final class Store: ObservableObject {
     func importIdentity(p12: URL, provision: URL, password: String, label: String?) throws -> SigningIdentity {
         let profile = try ProvisioningProfile.parse(contentsOf: provision)
 
-        var identity = SigningIdentity(
+        let identity = SigningIdentity(
             label: label?.isEmpty == false ? label! : profile.name,
             profile: profile
         )
