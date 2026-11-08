@@ -119,31 +119,72 @@ struct AddIdentitySheet: View {
             return
         }
 
+        let ext = url.pathExtension.lowercased()
         switch target {
         case .p12:
-            guard url.pathExtension.lowercased() == "p12" || url.pathExtension.lowercased() == "pfx" else {
+            guard ext == "p12" || ext == "pfx" else {
                 errorMessage = "Serve un file .p12."
                 return
             }
-            p12URL = url
         case .provision:
-            guard url.pathExtension.lowercased() == "mobileprovision" else {
+            guard ext == "mobileprovision" else {
                 errorMessage = "Serve un file .mobileprovision."
                 return
             }
-            provisionURL = url
-            loadPreview(url)
+        case nil:
+            return
+        }
+
+        // Il permesso sull'URL del picker vale una volta sola: appena chiuso non
+        // si riapre. Quindi il file va messo al sicuro adesso, e da qui in poi si
+        // lavora sulla copia.
+        let staged: URL
+        do {
+            staged = try stage(url)
+        } catch {
+            errorMessage = "Non riesco a leggere \(url.lastPathComponent): \(error.localizedDescription)"
+            return
+        }
+
+        switch target {
+        case .p12:
+            p12URL = staged
+        case .provision:
+            provisionURL = staged
+            loadPreview(staged)
         case nil:
             break
         }
     }
 
-    private func loadPreview(_ url: URL) {
+    /// Copia il file scelto in una cartella di lavoro, finché il permesso è valido.
+    private func stage(_ url: URL) throws -> URL {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        preview = try? ProvisioningProfile.parse(contentsOf: url)
-        if preview == nil {
-            errorMessage = "Il profilo non è leggibile."
+
+        var readError: NSError?
+        var payload: Data?
+        var coordinationError: Error?
+
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &readError) { readable in
+            do { payload = try Data(contentsOf: readable) }
+            catch { coordinationError = error }
+        }
+        if let readError { throw readError }
+        if let coordinationError { throw coordinationError }
+        guard let payload else { throw CocoaError(.fileReadUnknown) }
+
+        let destination = Paths.newWorkDir("pick").appendingPathComponent(url.lastPathComponent)
+        try payload.write(to: destination, options: .atomic)
+        return destination
+    }
+
+    private func loadPreview(_ url: URL) {
+        do {
+            preview = try ProvisioningProfile.parse(contentsOf: url)
+        } catch {
+            preview = nil
+            errorMessage = error.localizedDescription
         }
     }
 

@@ -127,8 +127,24 @@ struct SignSheet: View {
                 if selectedIdentityID == nil {
                     selectedIdentityID = store.preferredIdentity?.id
                 }
+                suggestBundleIdentifier()
+            }
+            .onChange(of: selectedIdentityID) { _, _ in
+                suggestBundleIdentifier()
             }
         }
+    }
+
+    /// Con un App ID senza jolly il bundle id è obbligato: lo propone l'app,
+    /// così non si scopre il problema solo dopo aver atteso la firma.
+    private func suggestBundleIdentifier() {
+        guard options.customBundleIdentifier.isEmpty,
+              let app, let identity,
+              !identity.profile.isWildcard,
+              !identity.profile.bundleIDPattern.contains("*"),
+              !identity.profile.allows(bundleID: app.bundleIdentifier)
+        else { return }
+        options.customBundleIdentifier = identity.profile.bundleIDPattern
     }
 
     private func run() {

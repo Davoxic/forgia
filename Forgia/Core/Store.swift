@@ -65,7 +65,15 @@ final class Store: ObservableObject {
             let staged = work.appendingPathComponent(source.lastPathComponent)
             let needsScope = source.startAccessingSecurityScopedResource()
             defer { if needsScope { source.stopAccessingSecurityScopedResource() } }
-            try fm.copyItem(at: source, to: staged)
+
+            var coordinationError: NSError?
+            var copyError: Error?
+            NSFileCoordinator().coordinate(readingItemAt: source, options: [], error: &coordinationError) { readable in
+                do { try fm.copyItem(at: readable, to: staged) }
+                catch { copyError = error }
+            }
+            if let coordinationError { throw coordinationError }
+            if let copyError { throw copyError }
 
             let extractDir = work.appendingPathComponent("x", isDirectory: true)
             let payload = try IPAArchive.extract(ipa: staged, into: extractDir)
