@@ -1,0 +1,55 @@
+name: Forgia
+options:
+  bundleIdPrefix: com.dchietti
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  Zsign:
+    url: https://github.com/claration/Zsign-Package
+    revision: c4ba9da4283031c07efa03bce42c4b8602d22e73
+  OpenSSL:
+    url: https://github.com/krzyzanowskim/OpenSSL
+    from: 3.3.3001
+  Zip:
+    url: https://github.com/marmelroy/Zip
+    from: 2.1.2
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+targets:
+  Forgia:
+    type: application
+    platform: iOS
+    sources:
+      - path: Forgia
+        excludes:
+          - "Resources/Info.plist"
+    dependencies:
+      - package: Zsign
+        product: Zsign
+      - package: Zsign
+        product: zsignc
+      - package: OpenSSL
+        product: OpenSSL
+      - package: Zip
+        product: Zip
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dchietti.forgia
+        PRODUCT_NAME: Forgia
+        INFOPLIST_FILE: Forgia/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        CLANG_ENABLE_MODULES: YES
+        OTHER_LDFLAGS: "$(inherited) -ObjC"
