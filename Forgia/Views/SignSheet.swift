@@ -27,6 +27,12 @@ struct SignSheet: View {
             : options.customBundleIdentifier
     }
 
+    /// Il bundle id imposto dal profilo è quello che occupa SborrSign stesso.
+    private var collidesWithSelf: Bool {
+        guard let own = Bundle.main.bundleIdentifier else { return false }
+        return !effectiveBundleID.isEmpty && effectiveBundleID == own
+    }
+
     private var mismatch: Bool {
         guard let identity, !options.adhoc, !effectiveBundleID.isEmpty else { return false }
         return !identity.profile.allows(bundleID: effectiveBundleID)
@@ -79,7 +85,10 @@ struct SignSheet: View {
                 } header: {
                     Text("Bundle identifier")
                 } footer: {
-                    if mismatch, let identity {
+                    if collidesWithSelf {
+                        Text("Attenzione: è lo stesso bundle id di SborrSign. Puoi firmare, ma installare questa app cancellerà SborrSign dal telefono, perché il tuo profilo copre un solo App ID.")
+                            .foregroundStyle(.orange)
+                    } else if mismatch, let identity {
                         Text("Il profilo copre \(identity.profile.bundleIDPattern): con questo bundle id la firma verrà rifiutata da iOS. Cambialo in qualcosa che rientri nel profilo.")
                             .foregroundStyle(.red)
                     } else if let identity, identity.profile.isWildcard {

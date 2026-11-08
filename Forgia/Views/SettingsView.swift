@@ -99,6 +99,11 @@ struct SettingsView: View {
 
                 Section {
                     DetailRow(label: "Versione", value: Bundle.main.shortVersion)
+                    DetailRow(
+                        label: "Bundle id di questa app",
+                        value: Bundle.main.bundleIdentifier ?? "sconosciuto",
+                        monospaced: true
+                    )
                     DetailRow(label: "Motore di firma", value: "zsign")
                 } header: {
                     Text("SborrSign")

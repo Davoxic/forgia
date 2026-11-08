@@ -38,7 +38,17 @@ final class InstallService: ObservableObject {
 
     // MARK: - Avvio
 
-    func install(app: LibraryApp, settings: AppSettings) async {
+    /// Vero se installare questa app rimpiazzerebbe SborrSign stesso, perché
+    /// condividono il bundle id. Succede con i profili che coprono un solo
+    /// App ID: per iOS due app con lo stesso bundle id sono la stessa app.
+    static func wouldReplaceThisApp(_ app: LibraryApp) -> Bool {
+        guard let own = Bundle.main.bundleIdentifier,
+              let signed = app.signature?.signedBundleIdentifier
+        else { return false }
+        return own == signed
+    }
+
+    func install(app: LibraryApp, settings: AppSettings, replacingThisApp: Bool = false) async {
         cancel()
         phase = .preparing
         events = []
@@ -47,6 +57,11 @@ final class InstallService: ObservableObject {
 
         guard app.isSigned, let signature = app.signature else {
             fail("Questa app non è ancora firmata.")
+            return
+        }
+
+        if Self.wouldReplaceThisApp(app), !replacingThisApp {
+            fail("Questa app ha lo stesso bundle id di SborrSign: installarla cancellerebbe SborrSign dal telefono.")
             return
         }
 

@@ -8,7 +8,14 @@ struct InstallSheet: View {
     @EnvironmentObject private var installer: InstallService
     @Environment(\.dismiss) private var dismiss
 
+    @State private var acceptReplacingSelf = false
+
     private var app: LibraryApp? { store.apps.first(where: { $0.id == appID }) }
+
+    private var collidesWithSelf: Bool {
+        guard let app else { return false }
+        return InstallService.wouldReplaceThisApp(app)
+    }
 
     var body: some View {
         NavigationStack {
@@ -24,6 +31,24 @@ struct InstallSheet: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
+                    }
+                }
+
+                if collidesWithSelf {
+                    Section {
+                        Label {
+                            Text("Questa app ha lo stesso bundle id di SborrSign. Installarla **cancella SborrSign** dal telefono, e per rimetterlo serve di nuovo il computer.")
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                        }
+                        .font(.footnote)
+
+                        Toggle("Procedi lo stesso", isOn: $acceptReplacingSelf)
+                    } header: {
+                        Text("Attenzione")
+                    } footer: {
+                        Text("Succede perché il tuo profilo copre un solo App ID. Finché è così, sul telefono può esserci o SborrSign o l'app firmata, non tutte e due. In alternativa esporta l'IPA firmato e installalo da computer.")
                     }
                 }
 
@@ -66,6 +91,7 @@ struct InstallSheet: View {
                         } label: {
                             Label("Avvia l'installazione", systemImage: "arrow.down.app")
                         }
+                        .disabled(collidesWithSelf && !acceptReplacingSelf)
                     }
                 } footer: {
                     Text("iOS chiede conferma e scarica il pacchetto dal server che Forgia tiene aperto. Non chiudere l'app finché l'icona non è comparsa nella schermata Home.")
@@ -116,6 +142,12 @@ struct InstallSheet: View {
 
     private func start() {
         guard let app else { return }
-        Task { await installer.install(app: app, settings: settings) }
+        Task {
+            await installer.install(
+                app: app,
+                settings: settings,
+                replacingThisApp: acceptReplacingSelf
+            )
+        }
     }
 }
