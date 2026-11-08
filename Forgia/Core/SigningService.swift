@@ -71,8 +71,20 @@ struct SigningResult {
 
 enum SigningService {
     /// Verifica che la password apra il .p12, senza firmare niente.
-    static func passwordOpens(p12 url: URL, password: String) -> Bool {
-        p12_password_check(url.path, password)
+    ///
+    /// Serve anche il profilo, per una ragione poco ovvia: il controllo di zsign
+    /// carica esplicitamente il provider "legacy" di OpenSSL per leggere i .p12
+    /// vecchio stile, e in OpenSSL 3 caricare un provider a mano impedisce il
+    /// caricamento automatico di quello di default — che è dove sta SHA-1, usato
+    /// per verificare il MAC del .p12. Senza SHA-1 la verifica fallisce anche con
+    /// la password giusta. Aprire prima una struttura CMS (il profilo è una
+    /// struttura CMS) forza l'inizializzazione del provider di default, così
+    /// restano attivi entrambi. zsign espone questo rimedio come
+    /// `password_check_fix`.
+    static func passwordOpens(p12 url: URL, provision: URL, password: String) -> Bool {
+        password_check_fix(provision.path)
+        defer { password_check_fix_free(provision.path) }
+        return p12_password_check(url.path, password)
     }
 
     /// Firma una app della libreria e produce `signed.ipa` nella sua cartella.
@@ -87,7 +99,8 @@ enum SigningService {
         if identity.profile.isExpired { throw SigningError.profileExpired }
 
         let password = identity.password
-        if !options.adhoc, !passwordOpens(p12: identity.p12URL, password: password) {
+        if !options.adhoc,
+           !passwordOpens(p12: identity.p12URL, provision: identity.provisionURL, password: password) {
             throw SigningError.wrongPassword
         }
 

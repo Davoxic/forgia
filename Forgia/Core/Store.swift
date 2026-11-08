@@ -139,7 +139,11 @@ final class Store: ObservableObject {
         try copy(p12, to: identity.p12URL)
         try copy(provision, to: identity.provisionURL)
 
-        guard SigningService.passwordOpens(p12: identity.p12URL, password: password) else {
+        guard SigningService.passwordOpens(
+            p12: identity.p12URL,
+            provision: identity.provisionURL,
+            password: password
+        ) else {
             try? FileManager.default.removeItem(at: dir)
             throw SigningError.wrongPassword
         }
