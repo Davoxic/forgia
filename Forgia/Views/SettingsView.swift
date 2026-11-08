@@ -101,7 +101,7 @@ struct SettingsView: View {
                     DetailRow(label: "Versione", value: Bundle.main.shortVersion)
                     DetailRow(label: "Motore di firma", value: "zsign")
                 } header: {
-                    Text("Forgia")
+                    Text("SborrSign")
                 } footer: {
                     Text("Firma solo app che hai il diritto di installare. Il certificato e la sua password restano sul telefono.")
                 }

@@ -1,4 +1,6 @@
-# Forgia
+# SborrSign
+
+(nome interno del progetto: Forgia)
 
 Installer di IPA che gira **sul telefono**. Importi un `.ipa` non firmato, lo firmi
 con il tuo `.p12` + `.mobileprovision`, e lo installi — senza computer.
