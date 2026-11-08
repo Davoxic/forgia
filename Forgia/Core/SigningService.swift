@@ -113,13 +113,6 @@ enum SigningService {
             ? app.bundleIdentifier
             : options.customBundleIdentifier
 
-        if !options.adhoc, !identity.profile.allows(bundleID: targetBundleID) {
-            throw SigningError.bundleNotAllowed(
-                pattern: identity.profile.bundleIDPattern,
-                bundleID: targetBundleID
-            )
-        }
-
         let work = Paths.newWorkDir("sign")
         defer { try? FileManager.default.removeItem(at: work) }
 

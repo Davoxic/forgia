@@ -82,17 +82,26 @@ struct SignSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.callout.monospaced())
+
+                    if let identity, !identity.profile.bundleIDPattern.contains("*") {
+                        Button("Usa l'App ID del profilo") {
+                            options.customBundleIdentifier = identity.profile.bundleIDPattern
+                        }
+                        .font(.callout)
+                    }
                 } header: {
                     Text("Bundle identifier")
                 } footer: {
                     if collidesWithSelf {
-                        Text("Attenzione: è lo stesso bundle id di SborrSign. Puoi firmare, ma installare questa app cancellerà SborrSign dal telefono, perché il tuo profilo copre un solo App ID.")
-                            .foregroundStyle(.orange)
-                    } else if mismatch, let identity {
-                        Text("Il profilo copre \(identity.profile.bundleIDPattern): con questo bundle id la firma verrà rifiutata da iOS. Cambialo in qualcosa che rientri nel profilo.")
+                        Text("È lo stesso bundle id di SborrSign: installare questa app cancellerebbe SborrSign dal telefono. Mettine uno diverso.")
                             .foregroundStyle(.red)
+                    } else if mismatch, let identity {
+                        Text("Fuori dall'App ID del profilo (\(identity.profile.bundleIDPattern)). Puoi firmare lo stesso, ma se iOS lo rifiuta in installazione è questo il motivo. Ogni app deve comunque avere un bundle id suo: due app con lo stesso identificativo si sostituiscono a vicenda.")
+                            .foregroundStyle(.orange)
                     } else if let identity, identity.profile.isWildcard {
                         Text("Il profilo ha un App ID jolly: va bene qualunque bundle id che inizi per \(identity.profile.bundleIDPattern.replacingOccurrences(of: "*", with: ""))")
+                    } else {
+                        Text("Vuoto significa che l'app tiene il suo bundle id originale. Cambialo solo se sai perché: due app con lo stesso identificativo si sostituiscono a vicenda.")
                     }
                 }
 
@@ -170,27 +179,11 @@ struct SignSheet: View {
                 if selectedIdentityID == nil {
                     selectedIdentityID = store.preferredIdentity?.id
                 }
-                suggestBundleIdentifier()
-            }
-            .onChange(of: selectedIdentityID) { _, _ in
-                suggestBundleIdentifier()
             }
             .onChange(of: iconItem) { _, item in
                 Task { await loadIcon(item) }
             }
         }
-    }
-
-    /// Con un App ID senza jolly il bundle id è obbligato: lo propone l'app,
-    /// così non si scopre il problema solo dopo aver atteso la firma.
-    private func suggestBundleIdentifier() {
-        guard options.customBundleIdentifier.isEmpty,
-              let app, let identity,
-              !identity.profile.isWildcard,
-              !identity.profile.bundleIDPattern.contains("*"),
-              !identity.profile.allows(bundleID: app.bundleIdentifier)
-        else { return }
-        options.customBundleIdentifier = identity.profile.bundleIDPattern
     }
 
     /// Porta la foto scelta in un file, pronto per la firma.
