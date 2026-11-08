@@ -58,7 +58,7 @@ struct InstallSheet: View {
                         Button {
                             installer.markDelivered()
                         } label: {
-                            Label("L'installazione è partita", systemImage: "checkmark.circle")
+                            Label("Ho finito, chiudi il server", systemImage: "checkmark.circle")
                         }
                     } else {
                         Button {
@@ -94,10 +94,20 @@ struct InstallSheet: View {
         case .handedToSystem:
             HStack { ProgressView(); Text("In attesa di iOS") }
         case .transferring:
-            HStack { ProgressView(); Text("Trasferimento del pacchetto") }
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView(value: installer.transferFraction)
+                Text("Trasferimento del pacchetto · \(Int(installer.transferFraction * 100))%")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         case .delivered:
-            Label("Consegnato a iOS", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Consegnato a iOS", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("L'app sta comparendo nella schermata Home.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)

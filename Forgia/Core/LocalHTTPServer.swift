@@ -30,8 +30,12 @@ final class LocalHTTPServer {
     private var listener: NWListener?
     private var resources: [String: Resource] = [:]
 
-    /// Chiamata su ogni richiesta ricevuta, per mostrare l'avanzamento.
+    /// Chiamata su ogni richiesta ricevuta.
     var onRequest: ((String) -> Void)?
+    /// Byte appena consegnati per quel percorso.
+    var onBytesSent: ((String, Int64) -> Void)?
+    /// Risposta completata per quel percorso.
+    var onResponseFinished: ((String) -> Void)?
 
     private(set) var isRunning = false
     private(set) var boundPort: UInt16 = 0
@@ -169,10 +173,10 @@ final class LocalHTTPServer {
         switch resource {
         case .data(let data, let contentType):
             serve(data: data, contentType: contentType, range: rangeHeader,
-                  headOnly: method == "HEAD", on: connection)
+                  headOnly: method == "HEAD", path: path, on: connection)
         case .file(let url, let contentType):
             serveFile(url, contentType: contentType, range: rangeHeader,
-                      headOnly: method == "HEAD", on: connection)
+                      headOnly: method == "HEAD", path: path, on: connection)
         }
     }
 
@@ -228,6 +232,7 @@ final class LocalHTTPServer {
         contentType: String,
         range: String?,
         headOnly: Bool,
+        path: String,
         on connection: NWConnection
     ) {
         let total = Int64(data.count)
@@ -246,7 +251,9 @@ final class LocalHTTPServer {
         var payload = headerData(status: status, contentType: contentType,
                                  contentLength: Int64(slice.count), contentRange: contentRange)
         if !headOnly { payload.append(slice) }
-        connection.send(content: payload, completion: .contentProcessed { _ in
+        connection.send(content: payload, contentContext: .finalMessage, isComplete: true,
+                        completion: .contentProcessed { [weak self] _ in
+            self?.onResponseFinished?(path)
             connection.cancel()
         })
     }
@@ -256,6 +263,7 @@ final class LocalHTTPServer {
         contentType: String,
         range: String?,
         headOnly: Bool,
+        path: String,
         on connection: NWConnection
     ) {
         guard let handle = try? FileHandle(forReadingFrom: url) else {
@@ -282,7 +290,9 @@ final class LocalHTTPServer {
 
         if headOnly || length == 0 {
             try? handle.close()
-            connection.send(content: header, completion: .contentProcessed { _ in
+            connection.send(content: header, contentContext: .finalMessage, isComplete: true,
+                            completion: .contentProcessed { [weak self] _ in
+                self?.onResponseFinished?(path)
                 connection.cancel()
             })
             return
@@ -295,18 +305,27 @@ final class LocalHTTPServer {
                 connection.cancel()
                 return
             }
-            self.streamBody(handle: handle, remaining: length, on: connection)
+            self.streamBody(handle: handle, remaining: length, path: path, on: connection)
         })
     }
 
     /// Manda il corpo a blocchi, chiedendo il blocco successivo solo quando il
     /// precedente è stato consegnato: così un IPA da centinaia di MB non finisce
     /// tutto in memoria.
-    private func streamBody(handle: FileHandle, remaining: Int64, on connection: NWConnection) {
+    private func streamBody(
+        handle: FileHandle,
+        remaining: Int64,
+        path: String,
+        on connection: NWConnection
+    ) {
         let chunkSize = 256 * 1024
         guard remaining > 0 else {
             try? handle.close()
-            connection.send(content: nil, isComplete: true, completion: .contentProcessed { _ in
+            // finalMessage chiude il lato in uscita solo dopo che tutto il
+            // corpo e' stato davvero scritto: chiudere prima tronca la coda.
+            connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
+                            completion: .contentProcessed { [weak self] _ in
+                self?.onResponseFinished?(path)
                 connection.cancel()
             })
             return
@@ -326,7 +345,13 @@ final class LocalHTTPServer {
                 connection.cancel()
                 return
             }
-            self.streamBody(handle: handle, remaining: remaining - Int64(chunk.count), on: connection)
+            self.onBytesSent?(path, Int64(chunk.count))
+            self.streamBody(
+                handle: handle,
+                remaining: remaining - Int64(chunk.count),
+                path: path,
+                on: connection
+            )
         })
     }
 }

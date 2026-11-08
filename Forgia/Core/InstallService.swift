@@ -23,7 +23,12 @@ final class InstallService: ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var events: [String] = []
-    @Published private(set) var servedBytes: Int64 = 0
+    /// Quanto del pacchetto iOS ha gia' ritirato, da 0 a 1.
+    @Published private(set) var transferFraction: Double = 0
+
+    private var packagePath = ""
+    private var packageSize: Int64 = 0
+    private var bytesServed: Int64 = 0
 
     private let server = LocalHTTPServer()
     private let keeper = BackgroundKeeper()
@@ -37,7 +42,8 @@ final class InstallService: ObservableObject {
         cancel()
         phase = .preparing
         events = []
-        servedBytes = 0
+        transferFraction = 0
+        bytesServed = 0
 
         guard app.isSigned, let signature = app.signature else {
             fail("Questa app non è ancora firmata.")
@@ -148,12 +154,23 @@ final class InstallService: ObservableObject {
         identity: SecIdentity? = nil
     ) throws {
         server.clearResources()
+        packagePath = "/\(identifier).ipa"
+        packageSize = Int64(
+            (try? app.signedIPA.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        )
+
         server.onRequest = { [weak self] path in
             Task { @MainActor in self?.note(request: path) }
         }
+        server.onBytesSent = { [weak self] path, bytes in
+            Task { @MainActor in self?.note(sent: bytes, for: path) }
+        }
+        server.onResponseFinished = { [weak self] path in
+            Task { @MainActor in self?.note(finished: path) }
+        }
         server.setResource(
             .file(app.signedIPA, contentType: "application/octet-stream"),
-            at: "/\(identifier).ipa"
+            at: packagePath
         )
 
         let small = iconData(for: app, side: 57)
@@ -184,12 +201,35 @@ final class InstallService: ObservableObject {
     }
 
     private func note(request path: String) {
-        if path.hasSuffix(".ipa") {
+        if path == packagePath {
             if phase != .transferring { log("iOS sta scaricando il pacchetto") }
             phase = .transferring
-            servedBytes += 1
         } else if path.hasSuffix(".plist") {
             log("Manifest consegnato")
+        }
+    }
+
+    private func note(sent bytes: Int64, for path: String) {
+        guard path == packagePath, packageSize > 0 else { return }
+        bytesServed += bytes
+        transferFraction = min(1, Double(bytesServed) / Double(packageSize))
+        if phase != .transferring, phase != .delivered { phase = .transferring }
+    }
+
+    /// Quando tutto il pacchetto è uscito dal server, per iOS il lavoro è fatto.
+    private func note(finished path: String) {
+        guard path == packagePath, packageSize > 0, bytesServed >= packageSize else { return }
+        guard phase != .delivered else { return }
+
+        transferFraction = 1
+        phase = .delivered
+        log("Pacchetto consegnato per intero: iOS sta installando")
+
+        // Il server resta su ancora un momento, nel caso iOS richieda qualcosa.
+        autoStopTask?.cancel()
+        autoStopTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
+            await MainActor.run { self?.cancel() }
         }
     }
 
@@ -204,6 +244,9 @@ final class InstallService: ObservableObject {
         autoStopTask = nil
         server.stop()
         server.clearResources()
+        server.onBytesSent = nil
+        server.onResponseFinished = nil
+        server.onRequest = nil
         keeper.stop()
         if phase.isBusy { phase = .idle }
     }
