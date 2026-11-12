@@ -77,6 +77,18 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>Provisioning profile</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.apple.mobileprovision</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Certificato PKCS#12</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>

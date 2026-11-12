@@ -39,6 +39,14 @@ struct IdentitiesView: View {
             .sheet(isPresented: $showingAdd) {
                 AddIdentitySheet()
             }
+            .onChange(of: store.pendingBump) { _, _ in
+                showingAdd = true
+            }
+            .onAppear {
+                if store.pendingP12 != nil || store.pendingProvision != nil {
+                    showingAdd = true
+                }
+            }
         }
     }
 

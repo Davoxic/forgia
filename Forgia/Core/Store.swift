@@ -9,6 +9,13 @@ final class Store: ObservableObject {
     @Published var identities: [SigningIdentity] = []
     @Published var lastError: String?
 
+    /// File di certificato arrivati da fuori (Condividi, Apri in Forgia),
+    /// in attesa che la schermata dei certificati li raccolga.
+    @Published var pendingP12: URL?
+    @Published var pendingProvision: URL?
+    /// Cambia a ogni file ricevuto, per far aprire il foglio.
+    @Published var pendingBump: Int = 0
+
     init() {
         Paths.bootstrap()
         IPAArchive.registerExtensions()
@@ -107,6 +114,27 @@ final class Store: ObservableObject {
 
             return app
         }.value
+    }
+
+    /// Mette al sicuro un file di certificato aperto da un'altra app.
+    /// Restituisce cosa ha riconosciuto, per poterlo dire all'utente.
+    @discardableResult
+    func acceptIncomingCertificateFile(_ url: URL) throws -> String {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        let payload = try Data(contentsOf: url)
+        let destination = Paths.newWorkDir("incoming")
+            .appendingPathComponent(url.lastPathComponent)
+        try payload.write(to: destination, options: .atomic)
+
+        if url.pathExtension.lowercased() == "mobileprovision" {
+            pendingProvision = destination
+        } else {
+            pendingP12 = destination
+        }
+        pendingBump += 1
+        return url.lastPathComponent
     }
 
     func update(_ app: LibraryApp) {

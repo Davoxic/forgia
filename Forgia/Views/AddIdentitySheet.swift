@@ -10,6 +10,7 @@ struct AddIdentitySheet: View {
     @State private var password = ""
     @State private var label = ""
     @State private var showingPicker = false
+    @State private var diagnostics: [String] = []
     @State private var errorMessage: String?
     @State private var preview: ProvisioningProfile?
 
@@ -44,6 +45,16 @@ struct AddIdentitySheet: View {
                     TextField(preview?.name ?? "Opzionale", text: $label)
                 }
 
+                if !diagnostics.isEmpty {
+                    Section("Diagnostica") {
+                        ForEach(Array(diagnostics.enumerated()), id: \.offset) { item in
+                            Text(item.element)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 if let preview {
                     Section("Letto dal profilo") {
                         DetailRow(label: "Team", value: preview.teamName)
@@ -73,18 +84,22 @@ struct AddIdentitySheet: View {
                     Button("Salva") { save() }.disabled(!canSave)
                 }
             }
-            .fileImporter(
-                isPresented: $showingPicker,
-                allowedContentTypes: [UTType.item],
-                allowsMultipleSelection: true
-            ) { result in
-                handlePick(result)
+            .sheet(isPresented: $showingPicker) {
+                DocumentPicker(
+                    onPick: { urls in
+                        showingPicker = false
+                        handlePick(urls)
+                    },
+                    onCancel: { showingPicker = false }
+                )
+                .ignoresSafeArea()
             }
             .alert("Non riuscito", isPresented: .constant(errorMessage != nil)) {
                 Button("OK") { errorMessage = nil }
             } message: {
                 Text(errorMessage ?? "")
             }
+            .onAppear { collectIncoming() }
         }
     }
 
@@ -109,71 +124,80 @@ struct AddIdentitySheet: View {
     /// Smista i file scelti guardando l'estensione, non quale pulsante è stato
     /// premuto: così non c'è nessuno stato da perdere fra l'apertura del
     /// selettore e la risposta.
-    private func handlePick(_ result: Result<[URL], Error>) {
-        switch result {
-        case .failure(let error):
-            errorMessage = error.localizedDescription
+    private func handlePick(_ urls: [URL]) {
+        note("Selettore: \(urls.count) file")
+        guard !urls.isEmpty else {
+            errorMessage = "Non è stato selezionato nessun file."
             return
-        case .success(let urls):
-            guard !urls.isEmpty else {
-                errorMessage = "Non è stato selezionato nessun file."
-                return
+        }
+
+        var problems: [String] = []
+        var accepted = 0
+
+        for url in urls {
+            let ext = url.pathExtension.lowercased()
+            note("· \(url.lastPathComponent) [.\(ext.isEmpty ? "nessuna estensione" : ext)]")
+
+            guard ext == "p12" || ext == "pfx" || ext == "mobileprovision" else {
+                problems.append("\(url.lastPathComponent): estensione non riconosciuta")
+                continue
             }
 
-            var problems: [String] = []
-            var accepted = 0
-
-            for url in urls {
-                let ext = url.pathExtension.lowercased()
-                guard ext == "p12" || ext == "pfx" || ext == "mobileprovision" else {
-                    problems.append("\(url.lastPathComponent): estensione .\(ext.isEmpty ? "(nessuna)" : ext) non riconosciuta")
-                    continue
-                }
-
-                let staged: URL
-                do {
-                    staged = try stage(url)
-                } catch {
-                    problems.append("\(url.lastPathComponent): \(error.localizedDescription)")
-                    continue
-                }
-
-                if ext == "mobileprovision" {
-                    provisionURL = staged
-                    loadPreview(staged)
-                } else {
-                    p12URL = staged
-                }
-                accepted += 1
+            let staged: URL
+            do {
+                staged = try stage(url)
+                note("  copiato, \(Paths.byteString(Int64((try? staged.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)))")
+            } catch {
+                note("  errore: \(error.localizedDescription)")
+                problems.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                continue
             }
 
-            if accepted == 0 {
-                errorMessage = problems.isEmpty
-                    ? "Nessun file utilizzabile: servono un .p12 e un .mobileprovision."
-                    : problems.joined(separator: "\n")
-            } else if !problems.isEmpty {
-                errorMessage = problems.joined(separator: "\n")
+            if ext == "mobileprovision" {
+                provisionURL = staged
+                loadPreview(staged)
+            } else {
+                p12URL = staged
             }
+            accepted += 1
+        }
+
+        if accepted == 0 {
+            errorMessage = problems.isEmpty
+                ? "Nessun file utilizzabile: servono un .p12 e un .mobileprovision."
+                : problems.joined(separator: "\n")
+        } else if !problems.isEmpty {
+            errorMessage = problems.joined(separator: "\n")
         }
     }
 
-    /// Copia il file scelto in una cartella di lavoro, finché il permesso è valido.
+    /// Raccoglie i file arrivati tramite Condividi o "Apri in Forgia".
+    private func collectIncoming() {
+        if let incoming = store.pendingP12 {
+            p12URL = incoming
+            store.pendingP12 = nil
+            note("Ricevuto da fuori: \(incoming.lastPathComponent)")
+        }
+        if let incoming = store.pendingProvision {
+            provisionURL = incoming
+            store.pendingProvision = nil
+            note("Ricevuto da fuori: \(incoming.lastPathComponent)")
+            loadPreview(incoming)
+        }
+    }
+
+    private func note(_ line: String) {
+        diagnostics.append(line)
+    }
+
+    /// Porta il file in una cartella di lavoro nostra. Il selettore lo consegna
+    /// gia' copiato nella cartella temporanea, che iOS puo' svuotare quando
+    /// vuole: qui diventa stabile fino al salvataggio.
     private func stage(_ url: URL) throws -> URL {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
-        var readError: NSError?
-        var payload: Data?
-        var coordinationError: Error?
-
-        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &readError) { readable in
-            do { payload = try Data(contentsOf: readable) }
-            catch { coordinationError = error }
-        }
-        if let readError { throw readError }
-        if let coordinationError { throw coordinationError }
-        guard let payload else { throw CocoaError(.fileReadUnknown) }
-
+        let payload = try Data(contentsOf: url)
         let destination = Paths.newWorkDir("pick").appendingPathComponent(url.lastPathComponent)
         try payload.write(to: destination, options: .atomic)
         return destination
