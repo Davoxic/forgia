@@ -10,13 +10,8 @@ struct AddIdentitySheet: View {
     @State private var password = ""
     @State private var label = ""
     @State private var showingPicker = false
-    @State private var pickingTarget: Picking?
     @State private var errorMessage: String?
     @State private var preview: ProvisioningProfile?
-
-    private enum Picking {
-        case p12, provision
-    }
 
     private var canSave: Bool { p12URL != nil && provisionURL != nil }
 
@@ -28,15 +23,15 @@ struct AddIdentitySheet: View {
                         title: "File .p12",
                         detail: p12URL?.lastPathComponent,
                         icon: "key.fill"
-                    ) { pickingTarget = .p12; showingPicker = true }
+                    ) { showingPicker = true }
 
                     pickerRow(
                         title: "File .mobileprovision",
                         detail: provisionURL?.lastPathComponent,
                         icon: "doc.badge.gearshape"
-                    ) { pickingTarget = .provision; showingPicker = true }
+                    ) { showingPicker = true }
                 } footer: {
-                    Text("Sono i due file che esporti dal portale Apple Developer: il .p12 con la chiave privata del certificato, e il provisioning profile dell'App ID.")
+                    Text("Sono i due file che esporti dal portale Apple Developer: il .p12 con la chiave privata del certificato, e il provisioning profile dell'App ID. Puoi selezionarli anche insieme: Forgia capisce dall'estensione qual è quale.")
                 }
 
                 Section("Password del .p12") {
@@ -81,7 +76,7 @@ struct AddIdentitySheet: View {
             .fileImporter(
                 isPresented: $showingPicker,
                 allowedContentTypes: [UTType.item],
-                allowsMultipleSelection: false
+                allowsMultipleSelection: true
             ) { result in
                 handlePick(result)
             }
@@ -111,49 +106,54 @@ struct AddIdentitySheet: View {
         }
     }
 
+    /// Smista i file scelti guardando l'estensione, non quale pulsante è stato
+    /// premuto: così non c'è nessuno stato da perdere fra l'apertura del
+    /// selettore e la risposta.
     private func handlePick(_ result: Result<[URL], Error>) {
-        let target = pickingTarget
-        pickingTarget = nil
-        guard case .success(let urls) = result, let url = urls.first else {
-            if case .failure(let error) = result { errorMessage = error.localizedDescription }
+        switch result {
+        case .failure(let error):
+            errorMessage = error.localizedDescription
             return
-        }
-
-        let ext = url.pathExtension.lowercased()
-        switch target {
-        case .p12:
-            guard ext == "p12" || ext == "pfx" else {
-                errorMessage = "Serve un file .p12."
+        case .success(let urls):
+            guard !urls.isEmpty else {
+                errorMessage = "Non è stato selezionato nessun file."
                 return
             }
-        case .provision:
-            guard ext == "mobileprovision" else {
-                errorMessage = "Serve un file .mobileprovision."
-                return
+
+            var problems: [String] = []
+            var accepted = 0
+
+            for url in urls {
+                let ext = url.pathExtension.lowercased()
+                guard ext == "p12" || ext == "pfx" || ext == "mobileprovision" else {
+                    problems.append("\(url.lastPathComponent): estensione .\(ext.isEmpty ? "(nessuna)" : ext) non riconosciuta")
+                    continue
+                }
+
+                let staged: URL
+                do {
+                    staged = try stage(url)
+                } catch {
+                    problems.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                    continue
+                }
+
+                if ext == "mobileprovision" {
+                    provisionURL = staged
+                    loadPreview(staged)
+                } else {
+                    p12URL = staged
+                }
+                accepted += 1
             }
-        case nil:
-            return
-        }
 
-        // Il permesso sull'URL del picker vale una volta sola: appena chiuso non
-        // si riapre. Quindi il file va messo al sicuro adesso, e da qui in poi si
-        // lavora sulla copia.
-        let staged: URL
-        do {
-            staged = try stage(url)
-        } catch {
-            errorMessage = "Non riesco a leggere \(url.lastPathComponent): \(error.localizedDescription)"
-            return
-        }
-
-        switch target {
-        case .p12:
-            p12URL = staged
-        case .provision:
-            provisionURL = staged
-            loadPreview(staged)
-        case nil:
-            break
+            if accepted == 0 {
+                errorMessage = problems.isEmpty
+                    ? "Nessun file utilizzabile: servono un .p12 e un .mobileprovision."
+                    : problems.joined(separator: "\n")
+            } else if !problems.isEmpty {
+                errorMessage = problems.joined(separator: "\n")
+            }
         }
     }
 
