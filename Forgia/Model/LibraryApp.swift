@@ -19,7 +19,7 @@ struct LibraryApp: Identifiable, Codable, Hashable {
     /// Opzionale su disco: le librerie salvate prima che esistesse questo
     /// campo non ce l'hanno, e un campo obbligatorio mancante farebbe fallire
     /// la lettura dell'intera libreria.
-    private var sourceSigned: Bool?
+    var sourceSigned: Bool?
     var sourceIsSigned: Bool {
         get { sourceSigned ?? false }
         set { sourceSigned = newValue }
