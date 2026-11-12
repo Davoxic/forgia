@@ -16,7 +16,14 @@ struct LibraryApp: Identifiable, Codable, Hashable {
     var signature: SignatureInfo?
 
     /// L'archivio importato era già firmato da qualcun altro.
-    var sourceIsSigned: Bool = false
+    /// Opzionale su disco: le librerie salvate prima che esistesse questo
+    /// campo non ce l'hanno, e un campo obbligatorio mancante farebbe fallire
+    /// la lettura dell'intera libreria.
+    private var sourceSigned: Bool?
+    var sourceIsSigned: Bool {
+        get { sourceSigned ?? false }
+        set { sourceSigned = newValue }
+    }
     /// Il profilo incorporato nell'archivio importato, se c'era.
     var sourceProfile: ProvisioningProfile?
 

@@ -48,12 +48,15 @@ struct LibraryView: View {
                     }
                 }
             }
-            .fileImporter(
-                isPresented: $showingImporter,
-                allowedContentTypes: [UTType.item],
-                allowsMultipleSelection: true
-            ) { result in
-                handleImport(result)
+            .sheet(isPresented: $showingImporter) {
+                DocumentPicker(
+                    onPick: { urls in
+                        showingImporter = false
+                        handleImport(urls)
+                    },
+                    onCancel: { showingImporter = false }
+                )
+                .ignoresSafeArea()
             }
             .alert("Importazione non riuscita", isPresented: .constant(errorMessage != nil)) {
                 Button("OK") { errorMessage = nil }
@@ -96,24 +99,27 @@ struct LibraryView: View {
         }
     }
 
-    private func handleImport(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result else {
-            if case .failure(let error) = result { errorMessage = error.localizedDescription }
-            return
-        }
+    private func handleImport(_ urls: [URL]) {
         let candidates = urls.filter { ["ipa", "tipa"].contains($0.pathExtension.lowercased()) }
         guard !candidates.isEmpty else {
-            errorMessage = "Seleziona un file con estensione .ipa."
+            let names = urls.map(\.lastPathComponent).joined(separator: ", ")
+            errorMessage = urls.isEmpty
+                ? "Non è stato selezionato nessun file."
+                : "Serve un file .ipa. Ricevuto: \(names)"
             return
         }
 
         importing = true
-        Task {
+        Task { @MainActor in
             for url in candidates {
                 do {
                     _ = try await store.importIPA(from: url)
                 } catch {
                     errorMessage = "\(url.lastPathComponent): \(error.localizedDescription)"
+                }
+                // Il selettore consegna una copia temporanea: non serve più.
+                if url.path.hasPrefix(FileManager.default.temporaryDirectory.path) {
+                    try? FileManager.default.removeItem(at: url)
                 }
             }
             importing = false
