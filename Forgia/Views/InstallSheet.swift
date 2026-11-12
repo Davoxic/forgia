@@ -24,11 +24,13 @@ struct InstallSheet: View {
                     Section {
                         HStack(spacing: 12) {
                             AppIconView(app: app, side: 44)
-                            VStack(alignment: .leading) {
-                                Text(app.signature?.signedDisplayName ?? app.displayName)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(app.installDisplayName)
                                     .font(.body.weight(.medium))
-                                Text(app.signature?.signedBundleIdentifier ?? app.bundleIdentifier)
+                                Text(app.installBundleIdentifier)
                                     .font(.caption).foregroundStyle(.secondary)
+                                Text(app.isSigned ? "Firmata con il tuo certificato" : "Firma già presente nell'archivio")
+                                    .font(.caption2).foregroundStyle(.tertiary)
                             }
                         }
                     }

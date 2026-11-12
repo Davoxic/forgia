@@ -100,6 +100,11 @@ final class Store: ObservableObject {
                 baseNames: metadata.iconFileNames,
                 to: app.iconFile
             )
+
+            let existing = IPAArchive.signature(ofAppBundle: bundle)
+            app.sourceIsSigned = existing.isSigned
+            app.sourceProfile = existing.profile
+
             return app
         }.value
     }

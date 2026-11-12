@@ -133,6 +133,24 @@ enum IPAArchive {
         }
     }
 
+    /// Guarda se il bundle porta già una firma, e con quale profilo.
+    ///
+    /// `_CodeSignature/CodeResources` c'è in ogni bundle firmato;
+    /// `embedded.mobileprovision` dice con quale profilo, e senza di quello
+    /// iOS non installa niente fuori dall'App Store.
+    static func signature(ofAppBundle app: URL) -> (isSigned: Bool, profile: ProvisioningProfile?) {
+        let fm = FileManager.default
+        let hasCodeSignature = fm.fileExists(
+            atPath: app.appendingPathComponent("_CodeSignature/CodeResources").path
+        )
+        let provisionURL = app.appendingPathComponent("embedded.mobileprovision")
+        let profile = fm.fileExists(atPath: provisionURL.path)
+            ? try? ProvisioningProfile.parse(contentsOf: provisionURL)
+            : nil
+
+        return (hasCodeSignature || profile != nil, profile)
+    }
+
     /// Ricompatta una cartella Payload in un IPA.
     static func pack(payload: URL, to ipa: URL) throws {
         try? FileManager.default.removeItem(at: ipa)

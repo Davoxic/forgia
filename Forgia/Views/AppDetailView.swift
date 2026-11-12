@@ -46,6 +46,46 @@ struct AppDetailView: View {
                     DetailRow(label: "iOS minimo", value: app.minimumOSVersion)
                 }
                 DetailRow(label: "Importata", value: app.importedAt.shortItalian)
+                HStack {
+                    Text("Firma").foregroundStyle(.secondary)
+                    Spacer()
+                    if app.sourceIsSigned {
+                        StatusChip(text: "già firmato", tone: .ok, icon: "checkmark.seal")
+                    } else {
+                        StatusChip(text: "non firmato", tone: .warning, icon: "exclamationmark.triangle")
+                    }
+                }
+            }
+
+            if let profile = app.sourceProfile, !app.isSigned {
+                Section {
+                    DetailRow(label: "Team", value: profile.teamName)
+                    DetailRow(label: "App ID", value: profile.applicationIdentifier, monospaced: true)
+                    DetailRow(label: "Tipo", value: profile.kindDescription)
+                    HStack {
+                        Text("Validità").foregroundStyle(.secondary)
+                        Spacer()
+                        StatusChip(
+                            text: profile.expirationDate?.shortItalian ?? "sconosciuta",
+                            tone: profile.isExpired ? .danger : .ok
+                        )
+                    }
+                    if !profile.isEnterprise {
+                        DetailRow(
+                            label: "Dispositivi",
+                            value: String(profile.provisionedDevices.count)
+                        )
+                    }
+                } header: {
+                    Text("Firma già presente nell'archivio")
+                } footer: {
+                    if profile.isExpired {
+                        Text("Questo profilo è scaduto: iOS rifiuterà l'installazione. Rifirma l'app con un tuo certificato.")
+                            .foregroundStyle(.red)
+                    } else if !profile.isEnterprise && !profile.provisionedDevices.isEmpty {
+                        Text("Si installerà solo se l'UDID di questo iPhone è tra quelli del profilo. Se iOS rifiuta, rifirmala con il tuo certificato.")
+                    }
+                }
             }
 
             if let signature = app.signature, app.isSigned {
@@ -63,27 +103,33 @@ struct AppDetailView: View {
             }
 
             Section {
-                Button {
-                    showingSignSheet = true
-                } label: {
-                    Label(app.isSigned ? "Firma di nuovo" : "Firma", systemImage: "signature")
-                }
-                .disabled(store.identities.isEmpty)
-
-                if app.isSigned {
+                if app.canInstall {
                     Button {
                         showingInstallSheet = true
                     } label: {
                         Label("Installa sul telefono", systemImage: "arrow.down.app")
                     }
-                    ShareLink(item: app.signedIPA) {
-                        Label("Esporta l'IPA firmato", systemImage: "square.and.arrow.up")
+                }
+
+                Button {
+                    showingSignSheet = true
+                } label: {
+                    Label(app.isSigned ? "Firma di nuovo" : "Firma con un mio certificato",
+                          systemImage: "signature")
+                }
+                .disabled(store.identities.isEmpty)
+
+                if let package = app.installableIPA {
+                    ShareLink(item: package) {
+                        Label("Esporta l'IPA", systemImage: "square.and.arrow.up")
                     }
                 }
             } footer: {
-                if store.identities.isEmpty {
-                    Text("Importa prima un certificato nella scheda Certificati.")
-                } else if app.isSigned {
+                if !app.canInstall {
+                    Text("L'archivio non porta nessuna firma, quindi iOS lo rifiuterebbe. Firmalo con un tuo certificato e poi installalo.")
+                } else if !app.isSigned {
+                    Text("L'archivio è già firmato: puoi installarlo così com'è. Rifirmalo solo se la sua firma è scaduta, se non copre questo iPhone, o se vuoi cambiargli nome o icona.")
+                } else {
                     Text("Se l'installazione via iOS non va a buon fine, esporta l'IPA e installalo con Sideloadly o AltStore: il file è già firmato.")
                 }
             }

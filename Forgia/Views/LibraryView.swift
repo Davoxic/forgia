@@ -77,7 +77,9 @@ struct LibraryView: View {
                 HStack(spacing: 6) {
                     StatusChip(text: app.versionDescription, tone: .neutral)
                     if app.isSigned {
-                        StatusChip(text: "Firmata", tone: .ok, icon: "checkmark.seal")
+                        StatusChip(text: "Firmata qui", tone: .ok, icon: "checkmark.seal")
+                    } else if app.sourceIsSigned {
+                        StatusChip(text: "Già firmata", tone: .ok, icon: "seal")
                     } else {
                         StatusChip(text: "Non firmata", tone: .warning, icon: "exclamationmark.triangle")
                     }

@@ -42,10 +42,8 @@ final class InstallService: ObservableObject {
     /// condividono il bundle id. Succede con i profili che coprono un solo
     /// App ID: per iOS due app con lo stesso bundle id sono la stessa app.
     static func wouldReplaceThisApp(_ app: LibraryApp) -> Bool {
-        guard let own = Bundle.main.bundleIdentifier,
-              let signed = app.signature?.signedBundleIdentifier
-        else { return false }
-        return own == signed
+        guard let own = Bundle.main.bundleIdentifier, app.canInstall else { return false }
+        return own == app.installBundleIdentifier
     }
 
     func install(app: LibraryApp, settings: AppSettings, replacingThisApp: Bool = false) async {
@@ -55,8 +53,8 @@ final class InstallService: ObservableObject {
         transferFraction = 0
         bytesServed = 0
 
-        guard app.isSigned, let signature = app.signature else {
-            fail("Questa app non è ancora firmata.")
+        guard app.canInstall else {
+            fail("Questo archivio non porta nessuna firma: firmalo con un tuo certificato prima di installarlo.")
             return
         }
 
@@ -72,13 +70,11 @@ final class InstallService: ObservableObject {
             switch settings.installMode {
             case .fullyLocal:
                 try await startFullyLocal(
-                    app: app, signature: signature,
-                    identifier: identifier, port: port, settings: settings
+                    app: app, identifier: identifier, port: port, settings: settings
                 )
             case .remoteManifest:
                 try await startWithRemoteManifest(
-                    app: app, signature: signature,
-                    identifier: identifier, port: port, settings: settings
+                    app: app, identifier: identifier, port: port, settings: settings
                 )
             }
         } catch {
@@ -90,7 +86,6 @@ final class InstallService: ObservableObject {
 
     private func startWithRemoteManifest(
         app: LibraryApp,
-        signature: LibraryApp.SignatureInfo,
         identifier: String,
         port: UInt16,
         settings: AppSettings
@@ -114,9 +109,9 @@ final class InstallService: ObservableObject {
             throw InstallError.badManifestService
         }
         components.queryItems = [
-            URLQueryItem(name: "bundleid", value: signature.signedBundleIdentifier),
-            URLQueryItem(name: "name", value: signature.signedDisplayName),
-            URLQueryItem(name: "version", value: signature.signedVersion),
+            URLQueryItem(name: "bundleid", value: app.installBundleIdentifier),
+            URLQueryItem(name: "name", value: app.installDisplayName),
+            URLQueryItem(name: "version", value: app.installVersion),
             URLQueryItem(name: "fetchurl", value: packageURL.absoluteString)
         ]
         guard let manifestURL = components.url else { throw InstallError.badManifestService }
@@ -129,7 +124,6 @@ final class InstallService: ObservableObject {
 
     private func startFullyLocal(
         app: LibraryApp,
-        signature: LibraryApp.SignatureInfo,
         identifier: String,
         port: UInt16,
         settings: AppSettings
@@ -143,9 +137,9 @@ final class InstallService: ObservableObject {
         log("Server HTTPS in ascolto su https://\(host):\(port)")
 
         let manifest = InstallManifest(
-            bundleIdentifier: signature.signedBundleIdentifier,
-            version: signature.signedVersion,
-            title: signature.signedDisplayName,
+            bundleIdentifier: app.installBundleIdentifier,
+            version: app.installVersion,
+            title: app.installDisplayName,
             packageURL: url(scheme: "https", host: host, port: port, path: "/\(identifier).ipa"),
             displayImageURL: url(scheme: "https", host: host, port: port, path: "/\(identifier)-57.png"),
             fullSizeImageURL: url(scheme: "https", host: host, port: port, path: "/\(identifier)-512.png")
@@ -169,9 +163,10 @@ final class InstallService: ObservableObject {
         identity: SecIdentity? = nil
     ) throws {
         server.clearResources()
+        let package = app.installableIPA ?? app.sourceIPA
         packagePath = "/\(identifier).ipa"
         packageSize = Int64(
-            (try? app.signedIPA.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            (try? package.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         )
 
         server.onRequest = { [weak self] path in
@@ -184,7 +179,7 @@ final class InstallService: ObservableObject {
             Task { @MainActor in self?.note(finished: path) }
         }
         server.setResource(
-            .file(app.signedIPA, contentType: "application/octet-stream"),
+            .file(package, contentType: "application/octet-stream"),
             at: packagePath
         )
 
